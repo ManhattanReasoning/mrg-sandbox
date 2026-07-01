@@ -1,11 +1,11 @@
 # mrg-sandbox
 
-The open FPGA build environment for [Manhattan Reasoning Gym](https://github.com/Barnard-PL-Labs/manhattan-reasoning-gym):
+The open FPGA build environment for [Manhattan Reasoning Gym](https://github.com/ManhattanReasoning/manhattan-reasoning-gym):
 the pinned toolchain image that `mrg.build` / `mrg.Sandbox` run locally, plus the
 LiteX SoC definition the cloud fleet flashes.
 
 ```bash
-docker pull ghcr.io/barnard-pl-labs/mrg-sandbox:latest
+docker pull ghcr.io/manhattanreasoning/mrg-sandbox:latest
 ```
 
 Users never build this themselves — `pip install manhattan-reasoning-gym` plus
@@ -45,7 +45,7 @@ are removed as defense in depth on top of `--network none` + no credentials.
 
 ## Related repos
 
-- [`manhattan-reasoning-gym`](https://github.com/Barnard-PL-Labs/manhattan-reasoning-gym) — the public Python SDK + `mrg` CLI (PyPI)
+- [`manhattan-reasoning-gym`](https://github.com/ManhattanReasoning/manhattan-reasoning-gym) — the public Python SDK + `mrg` CLI (PyPI)
 - `Manhattan-Reasoning-Cloud` (private) — orchestrator, host agent, and fleet infrastructure
 
 ## Development

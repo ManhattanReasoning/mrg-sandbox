@@ -17,8 +17,8 @@ on:
 
 env:
   # GHCR repository names must be lowercase; github.repository_owner is
-  # mixed-case (Barnard-PL-Labs), so hardcode the lowercased owner.
-  IMAGE: ghcr.io/barnard-pl-labs/mrg-sandbox
+  # mixed-case (ManhattanReasoning), so hardcode the lowercased owner.
+  IMAGE: ghcr.io/manhattanreasoning/mrg-sandbox
   # Keep in sync with sandbox/Dockerfile's OSS_CAD_DATE default.
   OSS_CAD_DATE: "2026-02-22"
 
