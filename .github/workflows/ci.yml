@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e "./firmware[dev]"
+
+      - name: Lint
+        run: ruff check firmware/src firmware/tests
+
+      - name: Unit tests
+        run: pytest firmware/tests/unit
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # oss-cad-suite so the toolchain tests run for real (others self-skip
+      # when docker image / board aren't present).
+      - uses: YosysHQ/setup-oss-cad-suite@v3
+
+      - name: Install dependencies
+        run: pip install -e ./firmware manhattan-reasoning-gym pytest ruff
+
+      - name: Lint
+        run: ruff check sandbox/mrg_build sandbox/tests
+
+      - name: Tests
+        run: PYTHONPATH=sandbox pytest sandbox/tests

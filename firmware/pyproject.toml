@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloud-fpga-firmware"
+version = "0.1.0"
+description = "LiteX SoC definition for Cloud FPGA ECP5 nodes"
+requires-python = ">=3.11"
+dependencies = [
+    "amaranth>=0.5",
+]
+
+# LiteX/Migen are deliberately NOT declared: the PyPI litex release is
+# broken on Python 3.11+ (bytecode-introspection bug in migen's CSR name
+# tracer). Install from git instead -- see HARDWARE.md. Modules that need
+# LiteX (platform, crg, soc) import it lazily; memmap and the unit tests
+# work without it.
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

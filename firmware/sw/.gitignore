@@ -1,0 +1,4 @@
+# Cross-compiler build artifacts (built by make; never committed)
+*.o
+*.elf
+*.bin

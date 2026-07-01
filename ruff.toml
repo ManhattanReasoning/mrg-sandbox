@@ -1,0 +1,14 @@
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+
+[lint.isort]
+known-first-party = [
+    "cloud_fpga_firmware",
+    "cloud_fpga_host",
+    "cloud_fpga_orchestrator",
+]
