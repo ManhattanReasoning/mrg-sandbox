@@ -29,7 +29,10 @@ jobs:
       contents: read
       packages: write
     steps:
+      # submodules: the firmware ROM links lwIP (firmware/sw/lwip).
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       # The image is multi-GB (oss-cad-suite + LiteX); reclaim runner disk first.
       - name: Free disk space
