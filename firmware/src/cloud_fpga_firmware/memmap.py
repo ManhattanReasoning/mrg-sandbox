@@ -25,8 +25,15 @@ REGIONS = {
     "ethmac": (MAC_BASE, MAC_SIZE),
 }
 
-# Compute-domain (cd_sys) clock. Drives both the ECP5 PLL output and the
-# nextpnr timing constraint, so this one value re-clocks the SoC and re-targets
-# place-and-route together. Override for clock-sweep experiments, e.g.
-# MRG_SYS_CLK_FREQ=90000000 (cd_eth stays 50 MHz, fixed by the RMII PHY).
+# Compute-domain (cd_sys) clock: the ECP5 PLL output the SoC actually runs
+# at. Override for clock-sweep experiments, e.g. MRG_SYS_CLK_FREQ=90000000
+# (cd_eth stays 50 MHz, fixed by the RMII PHY).
 SYS_CLK_FREQ = int(os.environ.get("MRG_SYS_CLK_FREQ", 50_000_000))
+
+# Timing target (MHz): the constraint nextpnr optimizes place-and-route
+# against (see soc.build_soc). Defaults to the sys clock, so a build tries to
+# meet the speed it will really run at; raise it to ask "would this design
+# close at X MHz" without re-clocking the PLL. Never changes any real clock.
+TIMING_TARGET_MHZ = float(
+    os.environ.get("MRG_TIMING_TARGET_MHZ", SYS_CLK_FREQ / 1e6)
+)
