@@ -85,7 +85,7 @@ shell out to it.
 # needs oss-cad-suite (set OSS_CAD_SUITE=~/oss-cad-suite on a dev host)
 cd sandbox
 python3 -m mrg_build --source tests/fixtures/mac.v --top mac --mode synth
-python3 -m mrg_build --source tests/fixtures/mac.v --top mac --mode pnr --target-mhz 65
+python3 -m mrg_build --source tests/fixtures/mac.v --top mac --mode pnr --timing-target-mhz 65
 python3 -m pytest tests/        # skips if the toolchain is absent
 ```
 
@@ -103,10 +103,14 @@ Tiers:
 - **`synth`** — core-only (just the user design): cheap util/feasibility. Fully
   deterministic.
 - **`pnr`** with `--design` — **full SoC** (VexRiscv + LiteEth + user design):
-  the truthful system-clock Fmax + SoC-wide util. `--target-mhz` re-clocks the
-  SoC (PLL + constraint); default target is `SYS_CLK_FREQ`. ROM is left empty
-  (contents don't affect timing/area), so no firmware build is needed for the
-  report. Reports carry `scope: "core" | "soc"`.
+  the truthful system-clock Fmax + SoC-wide util. Clocking and timing are
+  separate knobs: `--sys-clk-mhz` re-clocks the SoC (the PLL output; default
+  `SYS_CLK_FREQ`), `--timing-target-mhz` is the constraint PnR optimizes and
+  grades against (default: the sys clock) — so "can this design do 90 MHz" is
+  askable without re-clocking, and grading targets aren't limited to what the
+  PLL can synthesize. `--target-mhz` is the legacy single knob and sets both.
+  ROM is left empty (contents don't affect timing/area), so no firmware build
+  is needed for the report. Reports carry `scope: "core" | "soc"`.
 - **`pnr`** with `--source X.v` — core-only PnR on standalone Verilog.
 
 **Determinism caveat (full SoC only):** LiteX/Migen emit the netlist with

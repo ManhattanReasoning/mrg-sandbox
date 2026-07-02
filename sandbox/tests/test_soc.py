@@ -46,7 +46,7 @@ def test_full_soc_pnr(tmp_path):
 
     gw = frontend.export_soc(_DESIGN, tmp_path)
     rep = toolchain.pnr_soc(
-        gw, target_mhz=frontend.default_sys_clk_mhz(), design_hash_src=_DESIGN
+        gw, sys_clk_mhz=frontend.default_sys_clk_mhz(), design_hash_src=_DESIGN
     )
     assert rep.ok and rep.scope == "soc" and rep.fits
     # The SoC is the full VexRiscv + LiteEth + user design — far bigger than the
@@ -57,6 +57,7 @@ def test_full_soc_pnr(tmp_path):
     # Sys clock identified, and it clears the 50 MHz default with margin.
     assert rep.clock and "crg" in rep.clock
     assert rep.fmax_mhz and rep.fmax_mhz > 50
+    assert rep.sys_clk_mhz == frontend.default_sys_clk_mhz()
     assert rep.target_mhz == frontend.default_sys_clk_mhz()
     assert rep.timing_met is True
 
@@ -66,6 +67,21 @@ def test_reclock_to_unreachable_target_misses(tmp_path):
     from mrg_build import frontend
 
     gw = frontend.export_soc(_DESIGN, tmp_path, sys_clk_freq=300_000_000)
-    rep = toolchain.pnr_soc(gw, target_mhz=300.0)
+    rep = toolchain.pnr_soc(gw, sys_clk_mhz=300.0)
     assert rep.ok and rep.fits
+    assert rep.target_mhz == 300.0  # timing target defaults to the sys clock
     assert rep.timing_met is False  # ~120 MHz design can't hit 300 MHz
+
+
+def test_grade_above_sys_clk_without_reclocking(tmp_path):
+    """Ask "can it do 300 MHz" while the SoC stays clocked at the default."""
+    from mrg_build import frontend
+
+    gw = frontend.export_soc(_DESIGN, tmp_path)  # PLL stays at SYS_CLK_FREQ
+    rep = toolchain.pnr_soc(
+        gw, sys_clk_mhz=frontend.default_sys_clk_mhz(), timing_target_mhz=300.0
+    )
+    assert rep.ok and rep.fits
+    assert rep.sys_clk_mhz == frontend.default_sys_clk_mhz()
+    assert rep.target_mhz == 300.0
+    assert rep.timing_met is False  # graded against 300, not the sys clock
