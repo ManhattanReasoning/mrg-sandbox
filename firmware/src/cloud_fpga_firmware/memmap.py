@@ -25,15 +25,24 @@ REGIONS = {
     "ethmac": (MAC_BASE, MAC_SIZE),
 }
 
-# Compute-domain (cd_sys) clock: the ECP5 PLL output the SoC actually runs
-# at. Override for clock-sweep experiments, e.g. MRG_SYS_CLK_FREQ=90000000
-# (cd_eth stays 50 MHz, fixed by the RMII PHY).
+# Control-plane (cd_sys) clock: CPU, bus interconnect, Wishbone bridge, MAC
+# FIFOs. Fixed and deliberately not env-tunable: the infrastructure runs at
+# one known-good frequency in every build, whatever the user design is
+# clocked at (cd_eth is likewise 50 MHz, fixed by the RMII PHY).
+CONTROL_CLK_FREQ = 50_000_000
+
+# User-design (cd_user) clock: the ECP5 PLL output `user_design` runs at.
+# MRG_SYS_CLK_FREQ re-clocks ONLY the user design, e.g.
+# MRG_SYS_CLK_FREQ=90000000 for a 90 MHz clock-sweep point; the control
+# plane above is untouched. (Name kept for API compatibility -- this was
+# historically the whole-SoC clock.)
 SYS_CLK_FREQ = int(os.environ.get("MRG_SYS_CLK_FREQ", 50_000_000))
 
-# Timing target (MHz): the constraint nextpnr optimizes place-and-route
-# against (see soc.build_soc). Defaults to the sys clock, so a build tries to
-# meet the speed it will really run at; raise it to ask "would this design
-# close at X MHz" without re-clocking the PLL. Never changes any real clock.
+# Timing target (MHz): the constraint nextpnr optimizes cd_user against
+# (see soc.build_soc). Defaults to the user clock, so a build tries to
+# meet the speed the user design will really run at; raise it to ask "would
+# this design close at X MHz" without re-clocking the PLL. Never changes any
+# real clock. cd_sys is always constrained at CONTROL_CLK_FREQ.
 TIMING_TARGET_MHZ = float(
     os.environ.get("MRG_TIMING_TARGET_MHZ", SYS_CLK_FREQ / 1e6)
 )

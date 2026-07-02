@@ -18,7 +18,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e "./firmware[dev]"
+        # migen from git (PyPI's is broken on 3.11+) so the WishboneCDC
+        # simulation tests run instead of self-skipping.
+        run: |
+          pip install -e "./firmware[dev]"
+          pip install "git+https://github.com/m-labs/migen"
 
       - name: Lint
         run: ruff check firmware/src firmware/tests

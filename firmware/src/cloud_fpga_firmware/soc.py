@@ -34,8 +34,15 @@ from litex.soc.interconnect import wishbone
 from migen import ClockSignal, Instance, Module, ResetSignal, Signal
 
 from .crg import CRG
-from .memmap import MAC_BASE, SYS_CLK_FREQ, TIMING_TARGET_MHZ, USER_BASE, USER_SIZE
+from .memmap import (
+    CONTROL_CLK_FREQ,
+    MAC_BASE,
+    TIMING_TARGET_MHZ,
+    USER_BASE,
+    USER_SIZE,
+)
 from .platform import ECP5EvalPlatform
+from .wb_cdc import WishboneCDC
 
 DEFAULT_BUILD_DIR = "/tmp/cloud-fpga-build"
 
@@ -44,24 +51,29 @@ class UserDesignWrapper(Module):
     """Migen shim instantiating the user's Verilog module on the bus.
 
     Amaranth-generated Verilog exposes clk/rst as plain input ports; they
-    are tied to cd_sys so the user design runs in the SoC clock domain.
+    are tied to cd_user, so the user design runs at SYS_CLK_FREQ while the
+    rest of the SoC stays on the fixed control clock. ``self.bus`` is the
+    cd_sys-facing side of the WishboneCDC bridge -- that is what the SoC
+    interconnect sees.
     """
 
     def __init__(self):
-        self.bus = bus = wishbone.Interface(data_width=32, adr_width=9)
+        self.bus = wishbone.Interface(data_width=32, adr_width=9)
+        user_bus = wishbone.Interface(data_width=32, adr_width=9)
+        self.submodules.cdc = WishboneCDC(self.bus, user_bus)
 
         self.specials += Instance(
             "user_design",
-            i_clk=ClockSignal("sys"),
-            i_rst=ResetSignal("sys"),
-            i_wb_cyc=bus.cyc,
-            i_wb_stb=bus.stb,
-            i_wb_we=bus.we,
-            i_wb_adr=bus.adr,
-            i_wb_dat_w=bus.dat_w,
-            i_wb_sel=bus.sel,
-            o_wb_dat_r=bus.dat_r,
-            o_wb_ack=bus.ack,
+            i_clk=ClockSignal("user"),
+            i_rst=ResetSignal("user"),
+            i_wb_cyc=user_bus.cyc,
+            i_wb_stb=user_bus.stb,
+            i_wb_we=user_bus.we,
+            i_wb_adr=user_bus.adr,
+            i_wb_dat_w=user_bus.dat_w,
+            i_wb_sel=user_bus.sel,
+            o_wb_dat_r=user_bus.dat_r,
+            o_wb_ack=user_bus.ack,
         )
 
 
@@ -70,7 +82,7 @@ class CloudFPGASoC(SoCCore):
         SoCCore.__init__(
             self,
             platform,
-            clk_freq=SYS_CLK_FREQ,
+            clk_freq=CONTROL_CLK_FREQ,
             cpu_type="vexriscv",
             cpu_variant="standard",
             integrated_rom_size=0x10000,
@@ -164,11 +176,26 @@ def build_soc(
     soc = CloudFPGASoC(platform, rom_init=rom_init)
     # LiteX's trellis flow emits no clock constraint (no LPF FREQUENCY, no
     # --freq), so nextpnr would optimize against its built-in 12 MHz default.
-    # Constrain PnR at the timing target instead (default: the sys clock;
-    # MRG_TIMING_TARGET_MHZ overrides -- it never changes the PLL, and with
-    # --timing-allow-fail a miss is reported, not fatal). _pnr_opts is the
-    # pinned LiteX's pass-through for extra nextpnr options.
-    platform.toolchain._pnr_opts += f"--freq {TIMING_TARGET_MHZ} "
+    # With the split domains a single global --freq would be wrong in both
+    # directions (a low user target would let the router under-optimize the
+    # 50 MHz control plane; a high one would over-constrain it), so emit
+    # per-clock LPF FREQUENCY constraints instead: cd_sys and cd_eth at
+    # their fixed 50 MHz, cd_user at the timing target (default: the user
+    # clock; MRG_TIMING_TARGET_MHZ overrides -- it never changes the PLL).
+    # A timing miss is reported, not fatal (--timing-allow-fail).
+    freq_mhz = CONTROL_CLK_FREQ / 1e6
+    platform.add_platform_command(
+        f'FREQUENCY NET "{{sys_clk}}" {freq_mhz} MHZ',
+        sys_clk=soc.crg.cd_sys.clk,
+    )
+    platform.add_platform_command(
+        f'FREQUENCY NET "{{eth_clk}}" {freq_mhz} MHZ',
+        eth_clk=soc.crg.cd_eth.clk,
+    )
+    platform.add_platform_command(
+        f'FREQUENCY NET "{{user_clk}}" {TIMING_TARGET_MHZ} MHZ',
+        user_clk=soc.crg.cd_user.clk,
+    )
     builder = Builder(
         soc,
         output_dir=build_dir,
