@@ -238,7 +238,8 @@ def _script_line(script: str, prefix: str) -> str:
 def pnr_soc(
     gateware_dir: Path,
     *,
-    target_mhz: float,
+    sys_clk_mhz: float,
+    timing_target_mhz: float | None = None,
     seed: int = DEFAULT_SEED,
     clock: str = "crg",
     design_hash_src: Path | None = None,
@@ -247,13 +248,21 @@ def pnr_soc(
 
     Drives the LiteX-generated build script (correct device/package/speed/lpf)
     rather than reconstructing nextpnr args: runs its yosys step, then its
-    nextpnr step with our seed and ``--report`` appended, skipping ecppack.
+    nextpnr step with our seed, ``--freq`` and ``--report`` appended, skipping
+    ecppack.
 
-    ``target_mhz`` is the real compute-clock target (SYS_CLK_FREQ); nextpnr's own
-    ``constraint`` field is unreliable here (it reflects the input oscillator),
-    so timing_met is computed against this instead. ``clock`` selects the CRG
-    (sys) clock by net-name substring; eth and other domains are ignored.
+    ``sys_clk_mhz`` is the compute clock the SoC was built at (the PLL output,
+    fixed at export time — see ``frontend.export_soc``); it is reported for
+    context only. ``timing_target_mhz`` (default: the sys clock) is the question
+    being asked of PnR: it becomes nextpnr's ``--freq`` constraint — the LiteX
+    script carries no clock constraint of its own, so without this nextpnr
+    optimizes against its 12 MHz default — and the threshold ``timing_met`` is
+    graded against, in Python (nextpnr's per-clock ``constraint`` field isn't
+    used for grading). ``clock`` selects the CRG (sys) clock by net-name
+    substring; eth and other domains are ignored, though ``--freq`` constrains
+    them too.
     """
+    target_mhz = timing_target_mhz if timing_target_mhz is not None else sys_clk_mhz
     _require("yosys")
     _require("nextpnr-ecp5")
     gw = gateware_dir
@@ -272,6 +281,10 @@ def pnr_soc(
         npr[npr.index("--seed") + 1] = str(seed)
     else:
         npr += ["--seed", str(seed)]
+    if "--freq" in npr:
+        npr[npr.index("--freq") + 1] = str(target_mhz)
+    else:
+        npr += ["--freq", str(target_mhz)]
     report_path = gw / "report.json"
     npr += ["--report", str(report_path)]
     proc = _run(npr, gw)
@@ -293,6 +306,7 @@ def pnr_soc(
         ok=True,
         fits=fits,
         fmax_mhz=achieved,
+        sys_clk_mhz=sys_clk_mhz,
         target_mhz=target_mhz,
         timing_met=(achieved is not None and achieved >= target_mhz),
         clock=clk_name,

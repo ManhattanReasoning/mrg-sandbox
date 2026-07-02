@@ -43,6 +43,8 @@ def build(
     design: Path | str | None = None,
     source: Path | str | None = None,
     top: str | None = None,
+    sys_clk_mhz: float | None = None,
+    timing_target_mhz: float | None = None,
     target_mhz: float | None = None,
     seed: int = toolchain.DEFAULT_SEED,
     clock: str = "sys",
@@ -54,13 +56,34 @@ def build(
     Exactly one of ``design`` (an Amaranth design.py) or ``source`` (pre-exported
     Verilog, with ``top``) must be given. ``mode="pnr"`` with ``design`` does a
     full-SoC PnR (truthful system Fmax); with ``source`` it does core-only PnR.
-    ``target_mhz`` re-clocks the SoC for full-SoC pnr. ``quiet`` keeps the
-    caller's stdout clean (the toolchain is chatty).
+
+    Clocking and timing are separate knobs. ``sys_clk_mhz`` re-clocks the SoC
+    (the PLL output / compute clock; full-SoC pnr only). ``timing_target_mhz``
+    is the constraint PnR optimizes against and ``timing_met`` is graded
+    against; it defaults to the sys clock, but can differ — e.g. "can this
+    design do 90 MHz" without re-clocking, or a grading threshold the PLL can't
+    synthesize exactly. ``target_mhz`` is the legacy single knob and sets both.
+    ``quiet`` keeps the caller's stdout clean (the toolchain is chatty).
     """
     if (design is None) == (source is None):
         raise ValueError("provide exactly one of design= or source=")
     if source is not None and not top:
         raise ValueError("top= is required with source=")
+    if target_mhz is not None and (
+        sys_clk_mhz is not None or timing_target_mhz is not None
+    ):
+        raise ValueError(
+            "target_mhz is a legacy alias for both knobs; "
+            "don't combine it with sys_clk_mhz= or timing_target_mhz="
+        )
+    if target_mhz is not None:
+        timing_target_mhz = target_mhz
+        if mode == "pnr" and design is not None:
+            sys_clk_mhz = target_mhz  # legacy behavior: one knob re-clocks too
+    if sys_clk_mhz is not None and not (mode == "pnr" and design is not None):
+        raise ValueError(
+            "sys_clk_mhz= only applies to full-SoC pnr (design= + mode='pnr')"
+        )
 
     design = Path(design).resolve() if design is not None else None
     source = Path(source).resolve() if source is not None else None
@@ -72,18 +95,25 @@ def build(
 
     ctx = _quiet_stdout() if quiet else contextlib.nullcontext()
     with ctx:
-        return _dispatch(mode, design, source, top, target_mhz, seed, clock, work)
+        return _dispatch(
+            mode, design, source, top, sys_clk_mhz, timing_target_mhz,
+            seed, clock, work,
+        )
 
 
-def _dispatch(mode, design, source, top, target_mhz, seed, clock, work) -> BuildReport:
+def _dispatch(
+    mode, design, source, top, sys_clk_mhz, timing_target_mhz, seed, clock, work
+) -> BuildReport:
     if mode == "pnr" and design is not None:
         from . import frontend
 
-        sys_clk = int(target_mhz * 1e6) if target_mhz else None
+        sys_clk = int(sys_clk_mhz * 1e6) if sys_clk_mhz else None
         gateware = frontend.export_soc(design, work, sys_clk_freq=sys_clk)
-        target = target_mhz or frontend.default_sys_clk_mhz()
         return toolchain.pnr_soc(
-            gateware, target_mhz=target, seed=seed, design_hash_src=design
+            gateware,
+            sys_clk_mhz=sys_clk_mhz or frontend.default_sys_clk_mhz(),
+            timing_target_mhz=timing_target_mhz,
+            seed=seed, design_hash_src=design,
         )
     if mode == "synth":
         from . import frontend
@@ -93,7 +123,7 @@ def _dispatch(mode, design, source, top, target_mhz, seed, clock, work) -> Build
     if mode == "pnr":  # core-only PnR on standalone Verilog
         return toolchain.pnr(
             source, top, work,
-            target_mhz=target_mhz or toolchain.DEFAULT_TARGET_MHZ,
+            target_mhz=timing_target_mhz or toolchain.DEFAULT_TARGET_MHZ,
             seed=seed, clock=clock,
         )
     raise ValueError(f"unknown mode: {mode!r}")

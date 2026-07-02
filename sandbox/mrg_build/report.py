@@ -48,6 +48,7 @@ class BuildReport:
     scope: str = "core"  # "core" (user design only) | "soc" (full LiteX SoC)
     fits: bool | None = None  # pnr: did place-and-route succeed on the device
     fmax_mhz: float | None = None  # pnr: achieved Fmax of the selected clock
+    sys_clk_mhz: float | None = None  # soc pnr: PLL/compute clock the SoC was built at
     target_mhz: float | None = None  # the timing constraint that was applied
     timing_met: bool | None = None  # pnr: achieved >= target
     clock: str | None = None  # which clock net fmax refers to
