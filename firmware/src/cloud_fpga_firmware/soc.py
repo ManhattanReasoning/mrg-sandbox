@@ -185,15 +185,15 @@ def build_soc(
     # A timing miss is reported, not fatal (--timing-allow-fail).
     freq_mhz = CONTROL_CLK_FREQ / 1e6
     platform.add_platform_command(
-        f'FREQUENCY NET "{{sys_clk}}" {freq_mhz} MHZ',
+        f'FREQUENCY NET "{{sys_clk}}" {freq_mhz} MHZ;',
         sys_clk=soc.crg.cd_sys.clk,
     )
     platform.add_platform_command(
-        f'FREQUENCY NET "{{eth_clk}}" {freq_mhz} MHZ',
+        f'FREQUENCY NET "{{eth_clk}}" {freq_mhz} MHZ;',
         eth_clk=soc.crg.cd_eth.clk,
     )
     platform.add_platform_command(
-        f'FREQUENCY NET "{{user_clk}}" {TIMING_TARGET_MHZ} MHZ',
+        f'FREQUENCY NET "{{user_clk}}" {TIMING_TARGET_MHZ} MHZ;',
         user_clk=soc.crg.cd_user.clk,
     )
     builder = Builder(

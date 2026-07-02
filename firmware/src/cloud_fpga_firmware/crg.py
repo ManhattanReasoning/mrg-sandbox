@@ -6,7 +6,7 @@ cd_sys:  CPU, bus interconnect, MAC FIFOs -- fixed 50 MHz (CONTROL_CLK_FREQ)
          build, whatever the user design is clocked at.
 cd_user: the user design only -- a second output of the same PLL at
          SYS_CLK_FREQ (MRG_SYS_CLK_FREQ). Reached from cd_sys through the
-         WishboneCDC bridge in soc.py. Held in reset until the PLL locks.
+         WishboneCDC bridge in soc.py.
 cd_eth:  LiteEth RMII TX/RX pads -- clocked by the PHY's 50 MHz REF_CLK
          output on J4 (GR_PCLK6_0). Asynchronous to both domains above;
          LiteEthMAC's FIFOs handle the crossing.
@@ -22,7 +22,6 @@ loudly at build time in ECP5PLL.compute_config.
 
 from litex.soc.cores.clock import ECP5PLL
 from migen import ClockDomain, Module, Signal
-from migen.genlib.resetsync import AsyncResetSynchronizer
 
 from .memmap import CONTROL_CLK_FREQ, SYS_CLK_FREQ
 
@@ -43,12 +42,12 @@ class CRG(Module):
         pll.create_clkout(self.cd_sys, CONTROL_CLK_FREQ)
         pll.create_clkout(self.cd_user, SYS_CLK_FREQ)
 
-        # Hold the user design in reset until its clock is stable, with the
-        # deassertion synchronized into cd_user. cd_sys keeps its historical
-        # power-on behavior (GSR); it never re-clocks, so nothing changed.
-        self.specials += AsyncResetSynchronizer(
-            self.cd_user, ~pll.locked | self.rst
-        )
+        # cd_user gets the same reset-less treatment as cd_sys: ECP5 GSR
+        # initializes every FF to its init value at end of configuration, so
+        # the WishboneCDC toggles wake deterministically at 0. (An explicit
+        # AsyncResetSynchronizer here trips a combinational-loop false
+        # positive in yosys abc9 -- "Visited AIG node more than once" -- so
+        # match the SoC's historical power-on behavior instead.)
 
         # cd_eth is driven by the PHY's 50 MHz REF_CLK on J4 (GR_PCLK6_0).
         # nextpnr-ecp5 routes PCLK-capable input pins through the global
