@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="legacy single knob: sets both --sys-clk-mhz and "
                         "--timing-target-mhz")
     p.add_argument("--seed", type=int, default=toolchain.DEFAULT_SEED)
-    p.add_argument("--clock", default="sys", help="clock-net substring for Fmax")
+    p.add_argument("--clock", default="user", help="clock-net substring for Fmax")
     p.add_argument("--work", type=Path, help="work dir (default: a temp dir)")
     args = p.parse_args(argv)
 

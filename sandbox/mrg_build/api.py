@@ -47,7 +47,7 @@ def build(
     timing_target_mhz: float | None = None,
     target_mhz: float | None = None,
     seed: int = toolchain.DEFAULT_SEED,
-    clock: str = "sys",
+    clock: str = "user",
     work: Path | str | None = None,
     quiet: bool = True,
 ) -> BuildReport:
@@ -57,12 +57,18 @@ def build(
     Verilog, with ``top``) must be given. ``mode="pnr"`` with ``design`` does a
     full-SoC PnR (truthful system Fmax); with ``source`` it does core-only PnR.
 
-    Clocking and timing are separate knobs. ``sys_clk_mhz`` re-clocks the SoC
-    (the PLL output / compute clock; full-SoC pnr only). ``timing_target_mhz``
+    Clocking and timing are separate knobs. ``sys_clk_mhz`` re-clocks the
+    user design (the cd_user PLL output; full-SoC pnr only -- the control
+    plane is fixed at 50 MHz). ``timing_target_mhz``
     is the constraint PnR optimizes against and ``timing_met`` is graded
-    against; it defaults to the sys clock, but can differ — e.g. "can this
+    against; it defaults to the user clock, but can differ — e.g. "can this
     design do 90 MHz" without re-clocking, or a grading threshold the PLL can't
     synthesize exactly. ``target_mhz`` is the legacy single knob and sets both.
+    ``clock`` selects which clock net Fmax/timing_met refer to: since the
+    firmware's control-plane/user-domain split, the SoC's ``sys`` clock is the
+    fixed 50 MHz control plane and ``user`` is the re-clockable user design,
+    so ``user`` is the meaningful default (core-only PnR has a single clock
+    and falls back to it regardless).
     ``quiet`` keeps the caller's stdout clean (the toolchain is chatty).
     """
     if (design is None) == (source is None):
