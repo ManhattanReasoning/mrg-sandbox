@@ -34,7 +34,7 @@ from litex.soc.interconnect import wishbone
 from migen import ClockSignal, Instance, Module, ResetSignal, Signal
 
 from .crg import CRG
-from .memmap import MAC_BASE, SYS_CLK_FREQ, USER_BASE, USER_SIZE
+from .memmap import MAC_BASE, SYS_CLK_FREQ, TIMING_TARGET_MHZ, USER_BASE, USER_SIZE
 from .platform import ECP5EvalPlatform
 
 DEFAULT_BUILD_DIR = "/tmp/cloud-fpga-build"
@@ -162,6 +162,13 @@ def build_soc(
     platform = ECP5EvalPlatform()
     platform.add_source(user_design_v)
     soc = CloudFPGASoC(platform, rom_init=rom_init)
+    # LiteX's trellis flow emits no clock constraint (no LPF FREQUENCY, no
+    # --freq), so nextpnr would optimize against its built-in 12 MHz default.
+    # Constrain PnR at the timing target instead (default: the sys clock;
+    # MRG_TIMING_TARGET_MHZ overrides -- it never changes the PLL, and with
+    # --timing-allow-fail a miss is reported, not fatal). _pnr_opts is the
+    # pinned LiteX's pass-through for extra nextpnr options.
+    platform.toolchain._pnr_opts += f"--freq {TIMING_TARGET_MHZ} "
     builder = Builder(
         soc,
         output_dir=build_dir,
