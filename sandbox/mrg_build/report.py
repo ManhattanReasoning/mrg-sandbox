@@ -57,6 +57,7 @@ class BuildReport:
     warnings: list[str] = field(default_factory=list)
     design_hash: str | None = None  # sha256 of the source, for caching
     toolchain: str | None = None  # e.g. "yosys-0.62 / nextpnr-0.9"
+    backend: str | None = None  # "native" | "wasm" ("docker" is set by the SDK)
     log_tail: str | None = None  # last KB of tool output, for debugging
 
     def to_dict(self) -> dict:

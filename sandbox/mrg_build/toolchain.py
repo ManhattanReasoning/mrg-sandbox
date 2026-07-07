@@ -1,20 +1,25 @@
 """Drive yosys + nextpnr-ecp5 and parse their JSON into a BuildReport.
 
-This is the netlist->report half of the pipeline (host-runnable today with
-oss-cad-suite). The design.py->Verilog front-end (amaranth export + LiteX SoC)
-wires in at ``frontend`` once we're in the image where amaranth/litex/riscv-gcc
-live; until then ``synth``/``pnr`` take a Verilog source directly.
+This is the netlist->report half of the pipeline. The tools come from one of
+two backends, resolved once per run (see ``backend()``): native oss-cad-suite
+binaries on PATH (the sandbox image / a dev host), or the YoWASP WASM wheels
+(``pip install manhattan-reasoning-gym[local]`` — no Docker, no native
+toolchain). The design.py->Verilog front-end (amaranth export + LiteX SoC)
+wires in at ``frontend``; ``synth``/``pnr`` also take a Verilog source
+directly.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from .report import BuildReport, ResourceUse, Utilization
@@ -57,10 +62,69 @@ def _env() -> dict[str, str]:
     return dict(os.environ)
 
 
+# --- backend selection: native binaries vs YoWASP wheels ----------------------
+# The same tool can come from oss-cad-suite (native, fast — the sandbox image)
+# or from the YoWASP pip wheels (WASM via wasmtime — the ``[local]`` extra, no
+# Docker or native install needed). One backend is picked for the whole run so
+# a report is never a native/wasm hybrid.
+_WASM_TOOLS = {
+    "yosys": ("yowasp_yosys", "run_yosys"),
+    "nextpnr-ecp5": ("yowasp_nextpnr_ecp5", "run_nextpnr_ecp5"),
+}
+# YoWASP entry points are Python functions; run them in a subprocess so cwd,
+# env, and output capture behave exactly like the native tools.
+_WASM_SHIM = "import sys, {mod}; sys.exit({mod}.{fn}(sys.argv[1:]))"
+
+
+def _wasm_available() -> bool:
+    return all(
+        importlib.util.find_spec(mod) is not None for mod, _ in _WASM_TOOLS.values()
+    )
+
+
+def backend() -> str:
+    """Which toolchain backend this run uses: ``native`` or ``wasm``.
+
+    Native wins when the binaries are on PATH (the image, or a dev host with
+    oss-cad-suite); otherwise the YoWASP wheels if importable. Force with
+    MRG_TOOLCHAIN_BACKEND=native|wasm (e.g. parity tests).
+    """
+    forced = os.environ.get("MRG_TOOLCHAIN_BACKEND")
+    if forced:
+        if forced not in ("native", "wasm"):
+            raise ToolchainError(
+                f"MRG_TOOLCHAIN_BACKEND must be 'native' or 'wasm', got {forced!r}"
+            )
+        return forced
+    path = _env()["PATH"]
+    if all(shutil.which(t, path=path) for t in _WASM_TOOLS):
+        return "native"
+    if _wasm_available():
+        return "wasm"
+    return "native"  # neither present; _require raises the actionable error
+
+
+def _cmd(tool: str, *args: str) -> list[str]:
+    if backend() == "wasm":
+        mod, fn = _WASM_TOOLS[tool]
+        return [sys.executable, "-c", _WASM_SHIM.format(mod=mod, fn=fn), *args]
+    return [tool, *args]
+
+
 def _require(tool: str) -> None:
+    if backend() == "wasm":
+        mod, _ = _WASM_TOOLS[tool]
+        if importlib.util.find_spec(mod) is None:
+            raise ToolchainError(
+                f"{tool} (wasm) not found: the {mod} wheel is not installed. "
+                f"pip install 'manhattan-reasoning-gym[local]'"
+            )
+        return
     if shutil.which(tool, path=_env()["PATH"]) is None:
         raise ToolchainError(
-            f"{tool} not found. Install oss-cad-suite and/or set OSS_CAD_SUITE."
+            f"{tool} not found. pip install 'manhattan-reasoning-gym[local]' "
+            f"for the WASM toolchain, or install oss-cad-suite "
+            f"(and/or set OSS_CAD_SUITE)."
         )
 
 
@@ -71,7 +135,7 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 def _toolchain_version() -> str:
     def ver(tool: str, pat: str) -> str:
         try:
-            proc = _run([tool, "-V"], Path.cwd())
+            proc = _run(_cmd(tool, "-V"), Path.cwd())
             m = re.search(pat, proc.stdout + proc.stderr)
             return m.group(0) if m else tool
         except Exception:
@@ -100,7 +164,7 @@ def _yosys_synth(src: Path, top: str, work: Path) -> tuple[Path, dict[str, int],
         f'synth_ecp5 -top {top} -json "{netlist}"; '
         f'tee -q -o "{stat}" stat -json'
     )
-    proc = _run(["yosys", "-p", script], work)
+    proc = _run(_cmd("yosys", "-p", script), work)
     log = (proc.stdout + proc.stderr)[-4000:]
     if proc.returncode != 0 or not netlist.exists():
         raise ToolchainError(f"yosys synth failed:\n{log}")
@@ -133,7 +197,7 @@ def synth(src: Path, top: str, work: Path) -> BuildReport:
     try:
         _, cells, log = _yosys_synth(src, top, work)
     except ToolchainError as exc:
-        return BuildReport(mode="synth", ok=False, log_tail=str(exc))
+        return BuildReport(mode="synth", ok=False, backend=backend(), log_tail=str(exc))
     return BuildReport(
         mode="synth",
         ok=True,
@@ -141,6 +205,7 @@ def synth(src: Path, top: str, work: Path) -> BuildReport:
         synth_cells=cells,
         design_hash=_hash_source(src),
         toolchain=_toolchain_version(),
+        backend=backend(),
         log_tail=log,
     )
 
@@ -188,15 +253,17 @@ def pnr(
     try:
         netlist, cells, synth_log = _yosys_synth(src, top, work)
     except ToolchainError as exc:
-        return BuildReport(mode="pnr", ok=False, fits=False, log_tail=str(exc))
+        return BuildReport(
+            mode="pnr", ok=False, fits=False, backend=backend(), log_tail=str(exc)
+        )
 
     report_path = work / "report.json"
-    cmd = [
+    cmd = _cmd(
         "nextpnr-ecp5", f"--{DEVICE}", "--package", PACKAGE,
         "--json", str(netlist), "--report", str(report_path),
         "--freq", str(target_mhz), "--seed", str(seed),
         "--timing-allow-fail",  # report the miss instead of aborting
-    ]
+    )
     proc = _run(cmd, work)
     log = (proc.stdout + proc.stderr)[-4000:]
     fits = proc.returncode == 0 and report_path.exists()
@@ -204,7 +271,7 @@ def pnr(
         return BuildReport(
             mode="pnr", ok=False, fits=False, synth_cells=cells,
             design_hash=_hash_source(src), toolchain=_toolchain_version(),
-            log_tail=log,
+            backend=backend(), log_tail=log,
         )
 
     report = json.loads(report_path.read_text())
@@ -223,6 +290,7 @@ def pnr(
         synth_cells=cells,
         design_hash=_hash_source(src),
         toolchain=_toolchain_version(),
+        backend=backend(),
         log_tail=log,
     )
 
@@ -269,10 +337,10 @@ def pnr_soc(
     script = (gw / "build_cloud_fpga_soc.sh").read_text()
 
     yosys_cmd = shlex.split(_script_line(script, "yosys"))
-    proc = _run(yosys_cmd, gw)
+    proc = _run(_cmd(yosys_cmd[0], *yosys_cmd[1:]), gw)
     if proc.returncode != 0 or not (gw / "cloud_fpga_soc.json").exists():
         return BuildReport(
-            mode="pnr", ok=False, scope="soc", fits=False,
+            mode="pnr", ok=False, scope="soc", fits=False, backend=backend(),
             log_tail=(proc.stdout + proc.stderr)[-4000:],
         )
 
@@ -287,14 +355,14 @@ def pnr_soc(
         npr += ["--freq", str(target_mhz)]
     report_path = gw / "report.json"
     npr += ["--report", str(report_path)]
-    proc = _run(npr, gw)
+    proc = _run(_cmd(npr[0], *npr[1:]), gw)
     log = (proc.stdout + proc.stderr)[-4000:]
     fits = proc.returncode == 0 and report_path.exists()
 
     common = dict(
         mode="pnr", scope="soc",
         design_hash=_hash_source(design_hash_src) if design_hash_src else None,
-        toolchain=_toolchain_version(), log_tail=log,
+        toolchain=_toolchain_version(), backend=backend(), log_tail=log,
     )
     if not report_path.exists():
         return BuildReport(ok=False, fits=False, **common)
