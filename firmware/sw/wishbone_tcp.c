@@ -7,7 +7,8 @@
  * raw bus transactions, so a single firmware image serves every design.
  *
  * Request (big-endian):
- *   Byte 0:     opcode  (0x01 = write, 0x02 = read)
+ *   Byte 0:     opcode  (0x01 = write, 0x02 = read; write may be OR'd with
+ *                        0x80 -- see OP_FLAG_FIXED_ADDR below)
  *   Bytes 1-3:  length
  *                 write: number of 32-bit data words that follow
  *                 read:  encoded in the first (and only) data word
@@ -22,6 +23,14 @@
  * Errors (out-of-range address/length, unknown opcode) return status 0x01
  * with zero data words. Addresses are offsets into the user region only;
  * the rest of the SoC bus is unreachable from the network by design.
+ *
+ * OP_FLAG_FIXED_ADDR (0x80, write only): every word in the burst is written
+ * to the same address instead of the default one-address-per-word
+ * increment. A plain burst write is for loading a register array (like a
+ * RAM); a fixed-address burst is for a FIFO/push-register port, where a
+ * design keeps its own internal write_idx and expects repeated writes to
+ * one address -- the default incrementing burst would scatter those words
+ * across whatever registers happen to sit at address+1, address+2, ...
  */
 
 #include <stdint.h>
@@ -67,10 +76,11 @@ static volatile uint32_t *user_region = (volatile uint32_t *)USER_BASE;
 
 /* ---- Protocol constants -------------------------------------------------- */
 
-#define OP_WRITE     0x01
-#define OP_READ      0x02
-#define STATUS_OK    0x00
-#define STATUS_ERROR 0x01
+#define OP_WRITE          0x01
+#define OP_READ           0x02
+#define OP_FLAG_FIXED_ADDR 0x80
+#define STATUS_OK         0x00
+#define STATUS_ERROR      0x01
 
 #define HEADER_LEN   8
 /* Largest legal request: write of all 512 words. */
@@ -126,9 +136,11 @@ static uint32_t make_error(void)
 
 static uint32_t handle_request(const uint8_t *req, uint32_t req_len)
 {
-    uint8_t  op     = req[0];
-    uint32_t length = be24_load(req + 1);
-    uint32_t addr   = be32_load(req + 4);
+    uint8_t  raw_op    = req[0];
+    uint8_t  op        = raw_op & ~OP_FLAG_FIXED_ADDR;
+    uint8_t  fixed     = raw_op & OP_FLAG_FIXED_ADDR;
+    uint32_t length    = be24_load(req + 1);
+    uint32_t addr      = be32_load(req + 4);
 
     /* Addresses must be word-aligned byte offsets inside the user region. */
     if (addr & 3)
@@ -138,11 +150,19 @@ static uint32_t handle_request(const uint8_t *req, uint32_t req_len)
     if (op == OP_WRITE) {
         if (req_len != HEADER_LEN + length * 4)
             return make_error();
-        if (length == 0 || word_addr + length > USER_REGION_WORDS)
+        if (length == 0)
+            return make_error();
+        /* A fixed-address burst only ever touches word_addr itself; a
+         * normal burst touches the whole [word_addr, word_addr+length)
+         * range, so only it needs the wider bound. */
+        if (fixed ? word_addr >= USER_REGION_WORDS
+                  : word_addr + length > USER_REGION_WORDS)
             return make_error();
 
-        for (uint32_t i = 0; i < length; i++)
-            user_region[word_addr + i] = be32_load(req + HEADER_LEN + i * 4);
+        for (uint32_t i = 0; i < length; i++) {
+            uint32_t dst = fixed ? word_addr : word_addr + i;
+            user_region[dst] = be32_load(req + HEADER_LEN + i * 4);
+        }
 
         resp_buf[0] = STATUS_OK;
         be24_store(resp_buf + 1, 0);
