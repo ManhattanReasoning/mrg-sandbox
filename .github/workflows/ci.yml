@@ -41,12 +41,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      # oss-cad-suite so the toolchain tests run for real (others self-skip
-      # when docker image / board aren't present).
+      # oss-cad-suite so the native-backend toolchain tests run for real
+      # (others self-skip when docker image / board aren't present).
       - uses: YosysHQ/setup-oss-cad-suite@v3
 
       - name: Install dependencies
-        run: pip install -e ./firmware manhattan-reasoning-gym pytest ruff
+        # yowasp-* so the WASM-backend toolchain tests run for real too,
+        # instead of self-skipping alongside native.
+        run: |
+          pip install -e ./firmware manhattan-reasoning-gym pytest ruff
+          pip install yowasp-yosys yowasp-nextpnr-ecp5
 
       - name: Lint
         run: ruff check sandbox/mrg_build sandbox/tests
