@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -21,22 +22,18 @@ def _patch(monkeypatch, **overrides):
     """Patch the SDK client functions CloudSilicon calls; record invocations."""
     calls = {"released": False}
 
-    def find_idle_fpga(api_key, api_url):
-        return overrides.get("fpga_id", 0)
-
-    def submit(fpga_id, path, api_key, api_url, sys_clk_freq=None):
+    def submit(path, api_key, api_url, sys_clk_freq=None, timing_target_mhz=None):
         calls["submitted_path"] = path
         return "job-123"
 
-    def poll_job(fpga_id, job_id, api_key, api_url, timeout=0, on_poll=None):
-        return None
+    def poll_job(job_id, api_key, api_url, timeout=0, on_poll=None):
+        return {"status": "complete", "fpga_id": overrides.get("fpga_id", 0)}
 
     def release_session(fpga_id, api_key, api_url):
         calls["released"] = True
         return "released"
 
     for name, fn in {
-        "find_idle_fpga": overrides.get("find_idle_fpga", find_idle_fpga),
         "submit": overrides.get("submit", submit),
         "poll_job": overrides.get("poll_job", poll_job),
         "release_session": release_session,
@@ -54,16 +51,20 @@ def test_programmed_and_released(monkeypatch):
 
 
 def test_no_board(monkeypatch):
-    def raise_none(api_key, api_url):
-        raise _client.NoFPGAAvailableError("none")
+    def raise_no_capacity(
+        path, api_key, api_url, sys_clk_freq=None, timing_target_mhz=None
+    ):
+        response = requests.Response()
+        response.status_code = 503
+        raise requests.HTTPError("no build capacity", response=response)
 
-    _patch(monkeypatch, find_idle_fpga=raise_none)
+    _patch(monkeypatch, submit=raise_no_capacity)
     res = CloudSilicon(api_key="k")(b"d", {})
     assert res["status"] == "no_board"
 
 
 def test_build_failed(monkeypatch):
-    def poll_fail(fpga_id, job_id, api_key, api_url, timeout=0, on_poll=None):
+    def poll_fail(job_id, api_key, api_url, timeout=0, on_poll=None):
         raise RuntimeError("Job failed.\n<logs>")
 
     _patch(monkeypatch, poll_job=poll_fail)
