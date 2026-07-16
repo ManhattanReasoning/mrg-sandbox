@@ -50,6 +50,25 @@ default `mrg-sandbox:dev`) and parses the JSON report. So a plain `pip install`
 user needs only Docker — never yosys/LiteX. `SandboxUnavailableError` is raised
 only if *neither* the toolchain nor Docker is available.
 
+### Toolchain backends: native vs WASM (no Docker)
+
+Within `mrg_build` itself the tools resolve through one of two backends,
+picked once per run (`toolchain.backend()`, forceable via
+`MRG_TOOLCHAIN_BACKEND=native|wasm`):
+
+- **`native`** — yosys/nextpnr-ecp5 binaries on PATH (the sandbox image, or a
+  dev host with oss-cad-suite). Preferred when present; fastest.
+- **`wasm`** — the [YoWASP](https://yowasp.org/) wheels (`yowasp-yosys`,
+  `yowasp-nextpnr-ecp5`), WASM builds run via wasmtime. Pip-only, zero native
+  dependencies, works in Docker-less agent sandboxes (Claude Code, CI, hosted
+  notebooks). Roughly 2–5x slower than native — fine for user-scale reports.
+
+Every `BuildReport` records which backend produced it (`backend:
+"native" | "wasm"`) plus the tool versions (`toolchain:`), so numbers from
+different backends are never silently conflated. The SDK's `[local]` extra
+(`pip install manhattan-reasoning-gym[local]`) installs the YoWASP wheels
+pinned to the sandbox image's tool versions — see issue #8.
+
 ## Two run profiles (locked vs dev)
 
 One pinned image, launched two ways — distinguished by **trust**, not "strict vs
