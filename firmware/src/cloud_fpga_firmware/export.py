@@ -69,7 +69,7 @@ def resolve_top(mod):
     from amaranth.hdl import Elaboratable
 
     candidates = []
-    for obj in vars(mod).values():
+    for obj in list(vars(mod).values()):
         if (
             isinstance(obj, type)
             and issubclass(obj, Elaboratable)
