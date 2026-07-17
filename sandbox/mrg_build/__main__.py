@@ -49,11 +49,14 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, FileNotFoundError) as exc:
         # Genuine CLI usage mistakes (bad argument, missing design file).
         p.error(str(exc))
-    except Exception:
+    except (Exception, SystemExit):
         # A real build/elaboration failure (combinational cycle, syntax error,
         # etc.). Don't crash with a bare traceback and empty stdout -- clients
         # misread that as an infrastructure/sandbox failure. Emit a normal JSON
         # BuildReport with ok=False and the traceback in log_tail instead.
+        # SystemExit is included on purpose: the firmware's resolve_top raises it
+        # (not a plain Exception) when a design has no unique top Elaboratable, and
+        # SystemExit inherits from BaseException, so `except Exception` misses it.
         rep = BuildReport(mode=args.mode, ok=False, log_tail=traceback.format_exc())
 
     out = rep.to_json()
