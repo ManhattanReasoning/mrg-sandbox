@@ -11,6 +11,7 @@ import contextlib
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 from . import toolchain
@@ -105,10 +106,24 @@ def build(
 
     ctx = _quiet_stdout() if quiet else contextlib.nullcontext()
     with ctx:
-        return _dispatch(
-            mode, design, source, top, sys_clk_mhz, timing_target_mhz,
-            seed, clock, work,
-        )
+        try:
+            return _dispatch(
+                mode, design, source, top, sys_clk_mhz, timing_target_mhz,
+                seed, clock, work,
+            )
+        except (Exception, SystemExit):
+            # A real build/elaboration failure (combinational cycle, syntax
+            # error, resolve_top's no-unique-top SystemExit, etc.), not a
+            # usage mistake -- those are the ValueError/FileNotFoundError
+            # raises above, already returned to the caller before this point.
+            # Both __main__.py's CLI and the in-process SDK path
+            # (manhattan_reasoning_gym._local_build) call build() directly
+            # with no exception handling of their own, so this is the one
+            # place that has to catch it for either caller to get a real
+            # BuildReport instead of a crash with empty stdout -- #14/#18
+            # only patched __main__.py's own try/except, which the in-process
+            # path never goes through (see #19).
+            return BuildReport(mode=mode, ok=False, log_tail=traceback.format_exc())
 
 
 def _dispatch(
