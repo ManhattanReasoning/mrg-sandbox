@@ -54,8 +54,11 @@ def test_full_soc_pnr(tmp_path):
     assert rep.util.dsp.used == 4  # VexRiscv multiplier/divider
     assert rep.util.bram.used >= 20  # 64KB ROM + SRAM + ethmac + user
     assert rep.util.ff.used > 2000
-    # Sys clock identified, and it clears the 50 MHz default with margin.
-    assert rep.clock and "crg" in rep.clock
+    # Default clock is "user" (cd_user) -- resolved via _CLOCK_NET_ALIASES,
+    # not a literal "user" substring match (issue #23) -- and it clears the
+    # 50 MHz default with margin, with no fallback-to-worst-case warning.
+    assert rep.clock and "clkout1" in rep.clock
+    assert rep.warnings == []
     assert rep.fmax_mhz and rep.fmax_mhz > 50
     assert rep.sys_clk_mhz == frontend.default_sys_clk_mhz()
     assert rep.target_mhz == frontend.default_sys_clk_mhz()

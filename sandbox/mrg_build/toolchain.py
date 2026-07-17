@@ -146,18 +146,31 @@ def synth(src: Path, top: str, work: Path) -> BuildReport:
 
 
 # --- place & route -----------------------------------------------------------
+# LiteX/Migen name PLL outputs by creation order, not by clock-domain name:
+# ECP5PLL.create_clkout() creates an anonymous Signal each call, so Migen's
+# namer disambiguates them as "...clkout0", "...clkout1", ... in call order
+# (see firmware/src/cloud_fpga_firmware/crg.py, which calls create_clkout for
+# cd_sys before cd_user). Neither "sys" nor "user" ever appears literally in
+# the synthesized net name, so they must be translated to these ordinal
+# aliases before substring-matching. cd_eth is driven directly from a named
+# pad signal ("eth_clocks_ref_clk"), so "eth" matches with no translation.
+_CLOCK_NET_ALIASES = {"sys": "clkout0", "user": "clkout1"}
+
+
 def _select_clock(fmax: dict, prefer: str | None) -> tuple[str | None, dict]:
     """Pick the clock fmax refers to.
 
-    Prefer a clock whose net name contains ``prefer`` (e.g. "sys"); otherwise
-    fall back to the worst-case clock (lowest achieved), which is the binding
-    constraint for "does the whole design meet timing".
+    Prefer a clock whose net name contains ``prefer`` (e.g. "sys") -- resolved
+    through ``_CLOCK_NET_ALIASES`` first; otherwise fall back to the
+    worst-case clock (lowest achieved), which is the binding constraint for
+    "does the whole design meet timing".
     """
     if not fmax:
         return None, {}
     if prefer:
+        pattern = _CLOCK_NET_ALIASES.get(prefer, prefer)
         for name, data in fmax.items():
-            if prefer in name:
+            if pattern in name:
                 return name, data
     name = min(fmax, key=lambda n: fmax[n].get("achieved", float("inf")))
     return name, fmax[name]
@@ -259,9 +272,12 @@ def pnr_soc(
     optimizes against its 12 MHz default — and the threshold ``timing_met`` is
     graded against, in Python (nextpnr's per-clock ``constraint`` field isn't
     used for grading). ``clock`` selects which clock domain fmax/timing_met
-    refer to by net-name substring (default ``"user"``: the cd_user user-design
-    clock -- the meaningful one for overclock/STA-divergence work; ``"sys"`` is
-    the fixed 50 MHz control plane, ``"eth"`` the Ethernet domain). ``--freq``
+    refer to (default ``"user"``: the cd_user user-design clock -- the
+    meaningful one for overclock/STA-divergence work; ``"sys"`` is the fixed
+    50 MHz control plane, ``"eth"`` the Ethernet domain); "sys"/"user" are
+    translated via ``_CLOCK_NET_ALIASES`` to the net-name substring nextpnr
+    actually reports, since LiteX names PLL outputs by creation order rather
+    than domain name. ``--freq``
     still constrains every domain; ``clock`` only picks which one is reported.
     If no clock net matches ``clock``, the worst-case (slowest) clock is
     reported instead and a warning is attached, so a mislabeled fmax can't pass
@@ -308,7 +324,8 @@ def pnr_soc(
     clk_name, clk = _select_clock(report.get("fmax", {}), clock)
     achieved = clk.get("achieved")
     warnings = []
-    if clock and clk_name is not None and clock not in clk_name:
+    pattern = _CLOCK_NET_ALIASES.get(clock, clock) if clock else None
+    if pattern and clk_name is not None and pattern not in clk_name:
         warnings.append(
             f"requested clock {clock!r} not found among "
             f"{sorted(report.get('fmax', {}))}; "
