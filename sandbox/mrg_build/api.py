@@ -119,7 +119,7 @@ def _dispatch(
             gateware,
             sys_clk_mhz=sys_clk_mhz or frontend.default_sys_clk_mhz(),
             timing_target_mhz=timing_target_mhz,
-            seed=seed, design_hash_src=design,
+            seed=seed, clock=clock, design_hash_src=design,
         )
     if mode == "synth":
         from . import frontend

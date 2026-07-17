@@ -241,7 +241,7 @@ def pnr_soc(
     sys_clk_mhz: float,
     timing_target_mhz: float | None = None,
     seed: int = DEFAULT_SEED,
-    clock: str = "crg",
+    clock: str = "user",
     design_hash_src: Path | None = None,
 ) -> BuildReport:
     """Full-SoC PnR report: the truthful system-clock Fmax and SoC-wide util.
@@ -258,9 +258,14 @@ def pnr_soc(
     script carries no clock constraint of its own, so without this nextpnr
     optimizes against its 12 MHz default — and the threshold ``timing_met`` is
     graded against, in Python (nextpnr's per-clock ``constraint`` field isn't
-    used for grading). ``clock`` selects the CRG (sys) clock by net-name
-    substring; eth and other domains are ignored, though ``--freq`` constrains
-    them too.
+    used for grading). ``clock`` selects which clock domain fmax/timing_met
+    refer to by net-name substring (default ``"user"``: the cd_user user-design
+    clock -- the meaningful one for overclock/STA-divergence work; ``"sys"`` is
+    the fixed 50 MHz control plane, ``"eth"`` the Ethernet domain). ``--freq``
+    still constrains every domain; ``clock`` only picks which one is reported.
+    If no clock net matches ``clock``, the worst-case (slowest) clock is
+    reported instead and a warning is attached, so a mislabeled fmax can't pass
+    silently.
     """
     target_mhz = timing_target_mhz if timing_target_mhz is not None else sys_clk_mhz
     _require("yosys")
@@ -302,6 +307,13 @@ def pnr_soc(
     report = json.loads(report_path.read_text())
     clk_name, clk = _select_clock(report.get("fmax", {}), clock)
     achieved = clk.get("achieved")
+    warnings = []
+    if clock and clk_name is not None and clock not in clk_name:
+        warnings.append(
+            f"requested clock {clock!r} not found among "
+            f"{sorted(report.get('fmax', {}))}; "
+            f"reporting worst-case clock {clk_name!r} instead"
+        )
     return BuildReport(
         ok=True,
         fits=fits,
@@ -311,5 +323,6 @@ def pnr_soc(
         timing_met=(achieved is not None and achieved >= target_mhz),
         clock=clk_name,
         util=_util_from_report(report.get("utilization", {})),
+        warnings=warnings,
         **common,
     )
