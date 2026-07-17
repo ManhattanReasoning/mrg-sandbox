@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir --upgrade pip meson \
 # --- This repo: cloud_fpga_firmware + mrg_build; SDK pinned from PyPI ---------
 # The mrg SDK is a separate public repo published to PyPI; pin it so image
 # rebuilds don't silently pick up a new agent-facing surface.
-ARG MRG_SDK_VERSION=0.1.0
+ARG MRG_SDK_VERSION=0.1.8
 WORKDIR /opt/app
 COPY firmware /opt/app/firmware
 COPY sandbox /opt/app/sandbox
