@@ -53,9 +53,13 @@ def build(
 ) -> BuildReport:
     """Run a synth or pnr build and return a BuildReport.
 
-    Exactly one of ``design`` (an Amaranth design.py) or ``source`` (pre-exported
-    Verilog, with ``top``) must be given. ``mode="pnr"`` with ``design`` does a
-    full-SoC PnR (truthful system Fmax); with ``source`` it does core-only PnR.
+    Exactly one of ``design`` (an Amaranth design.py or plain Verilog design.v,
+    dispatched by extension) or ``source`` (pre-exported Verilog, with ``top``
+    required) must be given. ``mode="pnr"`` with ``design`` does a full-SoC PnR
+    (truthful system Fmax); with ``source`` it does core-only PnR. ``top`` is
+    optional with a Verilog ``design`` too -- a disambiguator for a file with
+    more than one module exposing the Wishbone contract, not a requirement
+    (unlike with ``source``, which has no auto-detection at all).
 
     Clocking and timing are separate knobs. ``sys_clk_mhz`` re-clocks the
     user design (the cd_user PLL output; full-SoC pnr only -- the control
@@ -114,7 +118,7 @@ def _dispatch(
         from . import frontend
 
         sys_clk = int(sys_clk_mhz * 1e6) if sys_clk_mhz else None
-        gateware = frontend.export_soc(design, work, sys_clk_freq=sys_clk)
+        gateware = frontend.export_soc(design, work, sys_clk_freq=sys_clk, top=top)
         return toolchain.pnr_soc(
             gateware,
             sys_clk_mhz=sys_clk_mhz or frontend.default_sys_clk_mhz(),
@@ -124,7 +128,9 @@ def _dispatch(
     if mode == "synth":
         from . import frontend
 
-        src, t = frontend.export_core(design, work) if design else (source, top)
+        src, t = (
+            frontend.export_core(design, work, top=top) if design else (source, top)
+        )
         return toolchain.synth(src, t, work)
     if mode == "pnr":  # core-only PnR on standalone Verilog
         return toolchain.pnr(

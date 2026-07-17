@@ -1,10 +1,12 @@
-"""design.py -> Verilog front-end.
+"""design.py / design.v -> Verilog front-end.
 
-Turns a user's Amaranth ``design.py`` into the ``user_design.v`` the toolchain
-consumes, by reusing ``cloud_fpga_firmware.export`` **read-only** (we import it,
-we don't modify it). This yields the *core-only* netlist for the cheap synth
-tier. The full-SoC path (truthful Fmax, wraps ``cloud_fpga_firmware.soc`` +
-firmware ROM) needs riscv-gcc and lands in the image phase.
+Turns a user's Amaranth ``design.py`` or plain Verilog ``design.v`` into the
+``user_design.v`` the toolchain consumes, by reusing
+``cloud_fpga_firmware.export`` **read-only** (we import it, we don't modify
+it) -- the language is dispatched by ``design_py``'s extension. This yields
+the *core-only* netlist for the cheap synth tier. The full-SoC path (truthful
+Fmax, wraps ``cloud_fpga_firmware.soc`` + firmware ROM) needs riscv-gcc and
+lands in the image phase.
 """
 
 from __future__ import annotations
@@ -37,22 +39,42 @@ def _ensure_importable() -> None:
         os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
 
 
-def export_core(design_py: Path, work: Path) -> tuple[Path, str]:
-    """Export the user design to user_design.v.
+def export_core(
+    design_py: Path, work: Path, *, top: str | None = None
+) -> tuple[Path, str]:
+    """Export the user design (Amaranth .py or plain Verilog .v) to user_design.v.
+
+    Language is dispatched by ``design_py``'s extension. ``top`` is ignored
+    for Amaranth (auto-detected the same way as always); for Verilog it's an
+    optional disambiguator, only needed when the file has more than one
+    module exposing the Wishbone contract (see
+    ``cloud_fpga_firmware.export.resolve_verilog_top``).
 
     Returns (verilog_path, top_module_name). Raises whatever the firmware
     exporter raises (e.g. SystemExit if no unique Wishbone top is found).
     """
     _ensure_importable()
-    from cloud_fpga_firmware.export import export_user_design
 
     out_dir = work / "export"
     out_dir.mkdir(parents=True, exist_ok=True)
-    verilog = export_user_design(str(design_py.resolve()), str(out_dir))
+    if design_py.suffix == ".v":
+        from cloud_fpga_firmware.export import export_verilog_design
+
+        verilog = export_verilog_design(str(design_py.resolve()), str(out_dir), top)
+    else:
+        from cloud_fpga_firmware.export import export_user_design
+
+        verilog = export_user_design(str(design_py.resolve()), str(out_dir))
     return Path(verilog), USER_DESIGN_TOP
 
 
-def export_soc(design_py: Path, work: Path, *, sys_clk_freq: int | None = None) -> Path:
+def export_soc(
+    design_py: Path,
+    work: Path,
+    *,
+    sys_clk_freq: int | None = None,
+    top: str | None = None,
+) -> Path:
     """Generate the full LiteX SoC gateware (CPU + Ethernet + user design).
 
     Runs the LiteX builder with run=False, so it emits the gateware Verilog,
@@ -61,10 +83,12 @@ def export_soc(design_py: Path, work: Path, *, sys_clk_freq: int | None = None) 
     report. ROM is left empty: its *contents* don't change resource/timing, only
     the firmware bytes, so no riscv-gcc is needed for the report.
 
+    ``top`` is the same optional Verilog disambiguator as ``export_core``.
+
     Returns the gateware directory (containing build_cloud_fpga_soc.sh etc.).
     """
     _ensure_importable()
-    verilog, _ = export_core(design_py, work)
+    verilog, _ = export_core(design_py, work, top=top)
 
     # cloud_fpga_firmware.memmap reads MRG_SYS_CLK_FREQ at import, re-clocking
     # the PLL + timing target together (same lever the orchestrator uses).

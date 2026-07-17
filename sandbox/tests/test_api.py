@@ -38,8 +38,9 @@ def soc_stubs(monkeypatch, tmp_path):
     """Stub export_soc + pnr_soc; capture what the dispatch hands them."""
     captured = {}
 
-    def fake_export_soc(design_py, work, *, sys_clk_freq=None):
+    def fake_export_soc(design_py, work, *, sys_clk_freq=None, top=None):
         captured["sys_clk_freq"] = sys_clk_freq
+        captured["top"] = top
         return tmp_path / "gateware"
 
     def fake_pnr_soc(gw, *, sys_clk_mhz, timing_target_mhz=None, **kw):
