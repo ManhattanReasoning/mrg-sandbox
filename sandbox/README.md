@@ -135,8 +135,8 @@ docker build -f sandbox/Dockerfile -t mrg-sandbox:dev .
 
 Pins (`OSS_CAD_DATE`, `OSS_CAD_ARCH`) are build ARGs — set `OSS_CAD_DATE` to a
 real oss-cad-suite release date, and `OSS_CAD_ARCH=linux-arm64` when building on
-Apple Silicon. Pinned to `2026-02-22` (matches the host dev bundle: yosys 0.62 /
-nextpnr 0.9).
+Apple Silicon. Pinned to `2026-06-18` (matches the host dev bundle: yosys 0.66 /
+nextpnr 0.10).
 
 **Determinism is per-platform-binary.** A fixed `--seed` gives identical Fmax
 across runs *of the same nextpnr binary*, but different builds (e.g. the darwin
