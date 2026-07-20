@@ -13,8 +13,11 @@ FROM ubuntu:24.04
 
 # Pinned to the same bundle the host dev toolchain uses (yosys 0.62 / nextpnr
 # 0.9), so local-host reports and image reports come from identical tools.
+# TARGETARCH is set automatically by buildx per --platform (amd64/arm64); map
+# it to oss-cad-suite's own arch naming so a multi-platform build pulls the
+# matching bundle instead of running amd64 under emulation on arm64 hosts.
 ARG OSS_CAD_DATE=2026-02-22
-ARG OSS_CAD_ARCH=linux-x64
+ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 
 # System deps: python, git/curl (litex_setup), build tools + meson/ninja (litex),
@@ -28,8 +31,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --- FPGA toolchain: oss-cad-suite (yosys + nextpnr-ecp5 + ecppack) ----------
 # Pinned prebuilt bundle; this is the reproducibility anchor for every report.
-RUN curl -fsSL -o /tmp/oss.tgz \
-      "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-${OSS_CAD_ARCH}-$(echo ${OSS_CAD_DATE} | tr -d -).tgz" \
+RUN case "${TARGETARCH}" in \
+        amd64) oss_cad_arch=linux-x64 ;; \
+        arm64) oss_cad_arch=linux-arm64 ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/oss.tgz \
+      "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-${oss_cad_arch}-$(echo ${OSS_CAD_DATE} | tr -d -).tgz" \
     && tar -xzf /tmp/oss.tgz -C /opt \
     && rm /tmp/oss.tgz
 ENV OSS_CAD_SUITE=/opt/oss-cad-suite
