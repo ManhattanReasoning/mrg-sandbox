@@ -16,8 +16,11 @@ FROM ubuntu:24.04
 # The previous 2026-02-22 pin (yosys 0.62) aborts synthesis with std::bad_alloc
 # on large designs (~50-core SKI GA, ~92% LUT); 0.66 synthesizes the same
 # design in ~2 GB. See Manhattan-Reasoning-Cloud#79.
+# TARGETARCH is set automatically by buildx per --platform (amd64/arm64); map
+# it to oss-cad-suite's own arch naming so a multi-platform build pulls the
+# matching bundle instead of running amd64 under emulation on arm64 hosts.
 ARG OSS_CAD_DATE=2026-06-18
-ARG OSS_CAD_ARCH=linux-x64
+ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 
 # System deps: python, git/curl (litex_setup), build tools + meson/ninja (litex),
@@ -31,8 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --- FPGA toolchain: oss-cad-suite (yosys + nextpnr-ecp5 + ecppack) ----------
 # Pinned prebuilt bundle; this is the reproducibility anchor for every report.
-RUN curl -fsSL -o /tmp/oss.tgz \
-      "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-${OSS_CAD_ARCH}-$(echo ${OSS_CAD_DATE} | tr -d -).tgz" \
+RUN case "${TARGETARCH}" in \
+        amd64) oss_cad_arch=linux-x64 ;; \
+        arm64) oss_cad_arch=linux-arm64 ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/oss.tgz \
+      "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-${oss_cad_arch}-$(echo ${OSS_CAD_DATE} | tr -d -).tgz" \
     && tar -xzf /tmp/oss.tgz -C /opt \
     && rm /tmp/oss.tgz
 ENV OSS_CAD_SUITE=/opt/oss-cad-suite
