@@ -11,12 +11,15 @@
 # releases at github.com/YosysHQ/oss-cad-suite-build/releases — set a real date.
 FROM ubuntu:24.04
 
-# Pinned to the same bundle the host dev toolchain uses (yosys 0.62 / nextpnr
-# 0.9), so local-host reports and image reports come from identical tools.
+# Pinned to the same bundle the host dev toolchain uses (yosys 0.66 / nextpnr
+# 0.10), so local-host reports and image reports come from identical tools.
+# The previous 2026-02-22 pin (yosys 0.62) aborts synthesis with std::bad_alloc
+# on large designs (~50-core SKI GA, ~92% LUT); 0.66 synthesizes the same
+# design in ~2 GB. See Manhattan-Reasoning-Cloud#79.
 # TARGETARCH is set automatically by buildx per --platform (amd64/arm64); map
 # it to oss-cad-suite's own arch naming so a multi-platform build pulls the
 # matching bundle instead of running amd64 under emulation on arm64 hosts.
-ARG OSS_CAD_DATE=2026-02-22
+ARG OSS_CAD_DATE=2026-06-18
 ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 

@@ -56,7 +56,7 @@ class BuildReport:
     synth_cells: dict[str, int] | None = None  # raw yosys post-synth cell counts
     warnings: list[str] = field(default_factory=list)
     design_hash: str | None = None  # sha256 of the source, for caching
-    toolchain: str | None = None  # e.g. "yosys-0.62 / nextpnr-0.9"
+    toolchain: str | None = None  # e.g. "yosys-0.66 / nextpnr-0.10"
     log_tail: str | None = None  # last KB of tool output, for debugging
 
     def to_dict(self) -> dict:

@@ -134,7 +134,7 @@ docker build -f sandbox/Dockerfile -t mrg-sandbox:dev .
 ```
 
 `OSS_CAD_DATE` (a real oss-cad-suite release date) is a build ARG, pinned to
-`2026-02-22` (matches the host dev bundle: yosys 0.62 / nextpnr 0.9). The
+`2026-06-18` (matches the host dev bundle: yosys 0.66 / nextpnr 0.10). The
 oss-cad-suite arch bundle is derived automatically from buildx's `TARGETARCH`
 (amd64 → `linux-x64`, arm64 → `linux-arm64`), so `docker build --platform
 linux/arm64 ...` on Apple Silicon pulls the native bundle with no separate ARG

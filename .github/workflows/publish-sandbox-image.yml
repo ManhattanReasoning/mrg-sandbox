@@ -20,7 +20,7 @@ env:
   # mixed-case (ManhattanReasoning), so hardcode the lowercased owner.
   IMAGE: ghcr.io/manhattanreasoning/mrg-sandbox
   # Keep in sync with sandbox/Dockerfile's OSS_CAD_DATE default.
-  OSS_CAD_DATE: "2026-02-22"
+  OSS_CAD_DATE: "2026-06-18"
 
 jobs:
   build-and-push:
