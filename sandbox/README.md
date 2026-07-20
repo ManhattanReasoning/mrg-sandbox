@@ -133,10 +133,14 @@ docker build -f sandbox/Dockerfile -t mrg-sandbox:dev .
 #   python -m mrg_build --design design.py --mode pnr --report report.json
 ```
 
-Pins (`OSS_CAD_DATE`, `OSS_CAD_ARCH`) are build ARGs — set `OSS_CAD_DATE` to a
-real oss-cad-suite release date, and `OSS_CAD_ARCH=linux-arm64` when building on
-Apple Silicon. Pinned to `2026-02-22` (matches the host dev bundle: yosys 0.62 /
-nextpnr 0.9).
+`OSS_CAD_DATE` (a real oss-cad-suite release date) is a build ARG, pinned to
+`2026-02-22` (matches the host dev bundle: yosys 0.62 / nextpnr 0.9). The
+oss-cad-suite arch bundle is derived automatically from buildx's `TARGETARCH`
+(amd64 → `linux-x64`, arm64 → `linux-arm64`), so `docker build --platform
+linux/arm64 ...` on Apple Silicon pulls the native bundle with no separate ARG
+to set. The published GHCR image is a multi-arch manifest (`linux/amd64` +
+`linux/arm64`), so a plain `docker pull`/`docker run` picks the right variant
+automatically on either host arch.
 
 **Determinism is per-platform-binary.** A fixed `--seed` gives identical Fmax
 across runs *of the same nextpnr binary*, but different builds (e.g. the darwin
