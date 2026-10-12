@@ -26,6 +26,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -73,7 +74,29 @@ def _verilog_wb_contract_str():
     )
 
 
-def _module_ports(design_path):
+def _read_verilog(design_path, sources=(), include_dirs=()):
+    # Quote every path for Yosys scripts; reject script delimiters even for
+    # direct local CLI callers (cloud bundles already restrict path names).
+    def quote(path):
+        path = os.path.abspath(path)
+        if any(c in path for c in ('"', "\\", "\n", "\r")):
+            raise ValueError("Unsupported character in Verilog source path")
+        return '"' + path + '"'
+
+    paths = list(dict.fromkeys([design_path, *sources]))
+    # Yosys does not unquote the suffix of -I. Cloud bundle paths use a
+    # restricted alphabet; reject unsupported local paths rather than silently
+    # searching a directory whose name contains literal quote characters.
+    include_paths = [os.path.abspath(path) for path in include_dirs]
+    if any(not re.fullmatch(r"[A-Za-z0-9_./-]+", path) for path in include_paths):
+        raise ValueError(
+            "Verilog include directories must not contain spaces or special characters"
+        )
+    includes = " ".join("-I" + path for path in include_paths)
+    return "read_verilog " + includes + " " + " ".join(map(quote, paths)) + "\n"
+
+
+def _module_ports(design_path, sources=(), include_dirs=()):
     """{module: {port: (width, direction)}} for every module in a Verilog file.
 
     Reads the file with yosys and inspects its own JSON netlist -- ports are
@@ -83,7 +106,7 @@ def _module_ports(design_path):
         json_path = os.path.join(tmp, "modules.json")
         script_path = os.path.join(tmp, "inspect.ys")
         with open(script_path, "w") as f:
-            f.write(f'read_verilog "{design_path}"\n')
+            f.write(_read_verilog(design_path, sources, include_dirs))
             # write_json's JSON backend rejects modules with unprocessed
             # always blocks ("contains processes"); proc doesn't touch ports.
             f.write("proc\n")
@@ -106,7 +129,7 @@ def _matches_verilog_wb_contract(ports):
     return ports == VERILOG_WB_PORTS
 
 
-def resolve_verilog_top(design_path, top=None):
+def resolve_verilog_top(design_path, top=None, sources=(), include_dirs=()):
     """Identify the top-level module in a Verilog file exposing the Wishbone contract.
 
     Mirrors resolve_top()'s auto-detect-with-exactly-one-match rule, at the
@@ -130,7 +153,11 @@ def resolve_verilog_top(design_path, top=None):
         SystemExit: if the target module doesn't expose the contract, or
             (with no `top`) zero or more than one module in the file does.
     """
-    modules = _module_ports(design_path)
+    modules = (
+        _module_ports(design_path, sources, include_dirs)
+        if sources or include_dirs
+        else _module_ports(design_path)
+    )
 
     if top is not None:
         if top not in modules:
@@ -160,7 +187,7 @@ def resolve_verilog_top(design_path, top=None):
     )
 
 
-def export_verilog_design(design_path, out_dir, top=None):
+def export_verilog_design(design_path, out_dir, top=None, sources=(), include_dirs=()):
     """Export a plain Verilog design to user_design.v with its top renamed.
 
     Args:
@@ -174,7 +201,7 @@ def export_verilog_design(design_path, out_dir, top=None):
     Returns:
         Path to user_design.v.
     """
-    resolved_top = resolve_verilog_top(design_path, top)
+    resolved_top = resolve_verilog_top(design_path, top, sources, include_dirs)
 
     os.makedirs(out_dir, exist_ok=True)
     v_path = os.path.join(out_dir, "user_design.v")
@@ -182,7 +209,7 @@ def export_verilog_design(design_path, out_dir, top=None):
     # Script file rather than -p so paths with spaces survive.
     ys_path = os.path.join(out_dir, "user_design.ys")
     with open(ys_path, "w") as f:
-        f.write(f'read_verilog "{design_path}"\n')
+        f.write(_read_verilog(design_path, sources, include_dirs))
         f.write(f"hierarchy -check -top {resolved_top}\n")
         f.write("proc; opt\n")
         f.write(f"rename {resolved_top} user_design\n")
@@ -333,10 +360,24 @@ def main():
         "needed to disambiguate a file with more than one module exposing "
         "the Wishbone contract (ignored for Amaranth designs)",
     )
+    parser.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="additional Verilog module file (repeatable)",
+    )
+    parser.add_argument(
+        "--include-dir",
+        action="append",
+        default=[],
+        help="Verilog include search directory (repeatable)",
+    )
     args = parser.parse_args()
     lang = args.lang or _infer_lang(args.design)
     if lang == "verilog":
-        export_verilog_design(args.design, args.out, args.top)
+        export_verilog_design(
+            args.design, args.out, args.top, args.source, args.include_dir
+        )
     else:
         export_user_design(args.design, args.out)
 
