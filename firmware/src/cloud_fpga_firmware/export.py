@@ -281,7 +281,7 @@ def resolve_top(mod):
     )
 
 
-def export_user_design(design_path, out_dir):
+def export_user_design(design_path, out_dir, project_root=None):
     """Export an Amaranth design to Verilog with top renamed to user_design.
 
     Args:
@@ -295,6 +295,8 @@ def export_user_design(design_path, out_dir):
     from amaranth.back.rtlil import convert
 
     design_dir = os.path.dirname(os.path.abspath(design_path))
+    if project_root is not None:
+        sys.path.insert(0, os.path.abspath(project_root))
     sys.path.insert(0, design_dir)
     spec = importlib.util.spec_from_file_location("user_design_mod", design_path)
     mod = importlib.util.module_from_spec(spec)
@@ -372,6 +374,9 @@ def main():
         default=[],
         help="Verilog include search directory (repeatable)",
     )
+    parser.add_argument(
+        "--project-root", default=None, help="bundle root for local Python imports"
+    )
     args = parser.parse_args()
     lang = args.lang or _infer_lang(args.design)
     if lang == "verilog":
@@ -379,7 +384,7 @@ def main():
             args.design, args.out, args.top, args.source, args.include_dir
         )
     else:
-        export_user_design(args.design, args.out)
+        export_user_design(args.design, args.out, args.project_root)
 
 
 if __name__ == "__main__":
