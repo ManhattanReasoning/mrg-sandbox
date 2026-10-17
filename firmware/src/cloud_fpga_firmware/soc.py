@@ -33,10 +33,12 @@ from litex.soc.integration.soc_core import SoCCore
 from litex.soc.interconnect import wishbone
 from migen import ClockSignal, Instance, Module, ResetSignal, Signal
 
+from .build_metadata import write_clock_config
 from .crg import CRG
 from .memmap import (
     CONTROL_CLK_FREQ,
     MAC_BASE,
+    SYS_CLK_FREQ,
     TIMING_TARGET_MHZ,
     USER_BASE,
     USER_SIZE,
@@ -196,6 +198,8 @@ def build_soc(
         f'FREQUENCY NET "{{user_clk}}" {TIMING_TARGET_MHZ} MHZ;',
         user_clk=soc.crg.cd_user.clk,
     )
+    if compile_gateware:
+        write_clock_config(build_dir, SYS_CLK_FREQ, TIMING_TARGET_MHZ)
     builder = Builder(
         soc,
         output_dir=build_dir,
